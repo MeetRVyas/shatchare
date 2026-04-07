@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LLM Rooms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0a0a0a;
+    --bg1:      #111111;
+    --bg2:      #1a1a1a;
+    --bg3:      #242424;
+    --border:   #2a2a2a;
+    --border2:  #333333;
+    --fg:       #e8e8e8;
+    --fg2:      #999999;
+    --fg3:      #555555;
+    --accent:   #ffffff;
+    --warn:     #ff6b35;
+    --ok:       #4ade80;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+
+  /* ── Lobby ────────────────────────────────────────────────────────────────── */
+  #lobby {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 0; padding: 24px;
+  }
+
+  .logo {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em;
+    color: var(--fg3); text-transform: uppercase; margin-bottom: 48px;
+  }
+  .logo span { color: var(--fg2); }
+
+  .lobby-card {
+    background: var(--bg1); border: 1px solid var(--border);
+    width: 100%; max-width: 420px;
+  }
+
+  .lobby-tabs {
+    display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border);
+  }
+  .lobby-tab {
+    padding: 14px; text-align: center; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--fg3);
+    border: none; background: none; transition: all .15s;
+  }
+  .lobby-tab.active { color: var(--fg); background: var(--bg2); }
+  .lobby-tab:hover:not(.active) { color: var(--fg2); }
+
+  .lobby-panel { padding: 28px; display: none; flex-direction: column; gap: 16px; }
+  .lobby-panel.active { display: flex; }
+
+  .field-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--fg3); margin-bottom: 6px;
+  }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px;
+    background: var(--bg2); border: 1px solid var(--border2);
+    color: var(--fg); font-family: var(--mono); font-size: 13px;
+    outline: none; transition: border-color .15s;
+  }
+  input:focus { border-color: var(--fg3); }
+
+  .btn {
+    padding: 11px 18px; border: 1px solid var(--border2); cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em;
+    text-transform: uppercase; background: var(--bg2); color: var(--fg2);
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg3); color: var(--fg); border-color: var(--fg3); }
+  .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .btn.primary:hover { background: #ccc; border-color: #ccc; }
+  .btn.danger { color: var(--warn); border-color: #3a1a0a; background: #1a0a00; }
+  .btn.danger:hover { background: #2a1000; border-color: var(--warn); }
+  .btn.sm { padding: 6px 10px; font-size: 10px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  .lobby-error {
+    font-family: var(--mono); font-size: 11px; color: var(--warn);
+    padding: 8px 10px; background: #1a0800; border: 1px solid #3a1800;
+    display: none;
+  }
+
+  /* ── App shell ────────────────────────────────────────────────────────────── */
+  #app { display: none; height: 100vh; flex-direction: column; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 0;
+    border-bottom: 1px solid var(--border); background: var(--bg1);
+    flex-shrink: 0; height: 48px;
+  }
+  .topbar-logo {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.25em;
+    color: var(--fg3); padding: 0 20px; border-right: 1px solid var(--border);
+    height: 100%; display: flex; align-items: center;
+  }
+  .room-badge {
+    font-family: var(--mono); font-size: 13px; color: var(--fg2);
+    padding: 0 16px; border-right: 1px solid var(--border);
+    height: 100%; display: flex; align-items: center; gap: 10px;
+  }
+  .room-code { color: var(--fg); font-weight: 600; letter-spacing: 0.1em; }
+  .copy-btn {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.15em;
+    padding: 3px 7px; background: none; border: 1px solid var(--border2);
+    color: var(--fg3); cursor: pointer; text-transform: uppercase; transition: all .15s;
+  }
+  .copy-btn:hover { color: var(--fg); border-color: var(--fg3); }
+  .key-status {
+    font-family: var(--mono); font-size: 10px; padding: 0 16px;
+    display: flex; align-items: center; gap: 6px; color: var(--fg3);
+  }
+  .key-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .key-dot.none { background: var(--warn); }
+  .topbar-actions { margin-left: auto; display: flex; }
+  .tb-btn {
+    height: 48px; padding: 0 18px; background: none; border: none; border-left: 1px solid var(--border);
+    color: var(--fg3); font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; cursor: pointer; transition: all .15s;
+  }
+  .tb-btn:hover { background: var(--bg2); color: var(--fg); }
+  .tb-btn.active { background: var(--bg2); color: var(--fg); }
+
+  /* ── Layout ───────────────────────────────────────────────────────────────── */
+  .main-area { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Chat ─────────────────────────────────────────────────────────────────── */
+  .chat-col { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+  .messages {
+    flex: 1; overflow-y: auto; padding: 0;
+    scroll-behavior: smooth;
+  }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: var(--bg); }
+  .messages::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  .msg {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    animation: fadeIn .2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+  .msg-gutter {
+    width: 180px; flex-shrink: 0; padding: 14px 16px;
+    border-right: 1px solid var(--border); background: var(--bg1);
+  }
+  .msg-who { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--fg2); }
+  .msg-who.assistant { color: var(--fg3); }
+  .msg-time { font-family: var(--mono); font-size: 9px; color: var(--fg3); margin-top: 2px; }
+
+  .msg-body { flex: 1; padding: 14px 20px; font-size: 14px; line-height: 1.65; }
+  .msg-body.assistant { color: var(--fg2); }
+  .msg-body pre {
+    background: var(--bg2); border: 1px solid var(--border); padding: 12px;
+    overflow-x: auto; margin: 8px 0; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  }
+  .msg-body code { font-family: var(--mono); font-size: 12px; background: var(--bg2); padding: 1px 4px; }
+
+  .typing-indicator {
+    display: none; border-bottom: 1px solid var(--border);
+  }
+  .typing-indicator.active { display: flex; }
+  .typing-gutter {
+    width: 180px; flex-shrink: 0; padding: 14px 16px;
+    border-right: 1px solid var(--border); background: var(--bg1);
+    font-family: var(--mono); font-size: 10px; color: var(--fg3);
+  }
+  .typing-dots { padding: 14px 20px; display: flex; align-items: center; gap: 4px; }
+  .typing-dots span {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--fg3);
+    animation: blink 1.2s infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity:.2; } 40% { opacity:1; } }
+
+  .error-banner {
+    display: none; margin: 8px 16px; padding: 10px 14px;
+    background: #1a0800; border: 1px solid #3a1800;
+    font-family: var(--mono); font-size: 11px; color: var(--warn);
+  }
+  .error-banner.show { display: block; }
+
+  .notice-banner {
+    display: none; margin: 8px 16px; padding: 10px 14px;
+    background: #0a1a00; border: 1px solid #1a3a00;
+    font-family: var(--mono); font-size: 11px; color: var(--ok);
+  }
+  .notice-banner.show { display: block; }
+
+  .input-row {
+    border-top: 1px solid var(--border); background: var(--bg1);
+    display: flex; align-items: flex-end; gap: 0; flex-shrink: 0;
+  }
+  .input-name {
+    width: 180px; flex-shrink: 0; border-right: 1px solid var(--border);
+    padding: 0 12px; display: flex; align-items: center;
+  }
+  .input-name input {
+    width: 100%; background: none; border: none; padding: 0;
+    font-family: var(--mono); font-size: 11px; color: var(--fg2);
+    letter-spacing: 0.05em;
+  }
+  .input-name input:focus { outline: none; }
+  textarea#msgInput {
+    flex: 1; resize: none; background: none; border: none; padding: 14px 16px;
+    color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    min-height: 50px; max-height: 160px; outline: none;
+  }
+  .send-btn {
+    height: 100%; min-height: 50px; padding: 0 20px;
+    border: none; border-left: 1px solid var(--border);
+    background: none; color: var(--fg3); font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; transition: all .15s;
+  }
+  .send-btn:hover { background: var(--bg2); color: var(--fg); }
+  .send-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+  /* ── Settings panel ───────────────────────────────────────────────────────── */
+  .settings-panel {
+    width: 340px; flex-shrink: 0; border-left: 1px solid var(--border);
+    background: var(--bg1); overflow-y: auto; display: none; flex-direction: column;
+  }
+  .settings-panel.open { display: flex; }
+  .settings-panel::-webkit-scrollbar { width: 4px; }
+  .settings-panel::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  .sp-section {
+    border-bottom: 1px solid var(--border); padding: 20px;
+  }
+  .sp-title {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--fg3); margin-bottom: 16px;
+  }
+
+  .key-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .key-item {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg2); border: 1px solid var(--border); padding: 8px 10px;
+  }
+  .key-item-text {
+    flex: 1; font-family: var(--mono); font-size: 11px; color: var(--fg2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .key-remove {
+    background: none; border: none; cursor: pointer; color: var(--fg3);
+    font-size: 16px; line-height: 1; padding: 0 2px; transition: color .15s;
+    flex-shrink: 0;
+  }
+  .key-remove:hover { color: var(--warn); }
+  .key-empty {
+    font-family: var(--mono); font-size: 11px; color: var(--fg3);
+    padding: 8px 0; text-align: center;
+  }
+
+  .add-key-row { display: flex; gap: 6px; }
+  .add-key-row input { flex: 1; }
+
+  select {
+    width: 100%; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--border2);
+    color: var(--fg); font-family: var(--mono); font-size: 12px; outline: none;
+    appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23555'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  select:focus { border-color: var(--fg3); }
+
+  textarea.sp-textarea {
+    width: 100%; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--border2);
+    color: var(--fg); font-family: var(--mono); font-size: 12px; outline: none;
+    resize: vertical; min-height: 80px; line-height: 1.5;
+  }
+  textarea.sp-textarea:focus { border-color: var(--fg3); }
+
+  .range-row { display: flex; align-items: center; gap: 10px; }
+  .range-row input[type="range"] {
+    flex: 1; accent-color: var(--fg2);
+    background: var(--bg2); border: none; padding: 0; height: 2px;
+    outline: none; cursor: pointer;
+  }
+  .range-val { font-family: var(--mono); font-size: 11px; color: var(--fg2); width: 32px; text-align: right; }
+
+  .sp-save-btn { width: 100%; margin-top: 12px; }
+
+  /* ── Empty state ──────────────────────────────────────────────────────────── */
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; color: var(--fg3); gap: 8px;
+  }
+  .empty-state-icon { font-size: 32px; opacity: .3; }
+  .empty-state-text { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
+
+  @media (max-width: 640px) {
+    .msg-gutter, .input-name { width: 100px; }
+    .settings-panel { width: 100%; position: absolute; top: 48px; right: 0; bottom: 0; z-index: 10; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ LOBBY ══════════════ -->
+<div id="lobby">
+  <div class="logo">LLM ROOMS <span>// powered by gemini</span></div>
+  <div class="lobby-card">
+    <div class="lobby-tabs">
+      <button class="lobby-tab active" onclick="switchTab('create')">Create Room</button>
+      <button class="lobby-tab" onclick="switchTab('join')">Join Room</button>
+    </div>
+
+    <div class="lobby-panel active" id="tab-create">
+      <div>
+        <div class="field-label">Your Name</div>
+        <input type="text" id="createName" placeholder="anonymous" maxlength="32"/>
+      </div>
+      <div class="lobby-error" id="createError"></div>
+      <button class="btn primary" onclick="createRoom()">Create Room →</button>
+    </div>
+
+    <div class="lobby-panel" id="tab-join">
+      <div>
+        <div class="field-label">Your Name</div>
+        <input type="text" id="joinName" placeholder="anonymous" maxlength="32"/>
+      </div>
+      <div>
+        <div class="field-label">Room Code</div>
+        <input type="text" id="joinCode" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:0.15em"/>
+      </div>
+      <div class="lobby-error" id="joinError"></div>
+      <button class="btn primary" onclick="joinRoom()">Join Room →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ APP ══════════════ -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-logo">ROOMS</div>
+    <div class="room-badge">
+      <span>Room</span>
+      <span class="room-code" id="topRoomCode">—</span>
+      <button class="copy-btn" onclick="copyLink()">Copy Link</button>
+    </div>
+    <div class="key-status">
+      <div class="key-dot none" id="keyDot"></div>
+      <span id="keyCount">0 keys</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="tb-btn" id="settingsToggleBtn" onclick="toggleSettings()">Settings</button>
+      <button class="tb-btn" onclick="leaveRoom()">Leave</button>
+    </div>
+  </div>
+
+  <div class="main-area">
+    <div class="chat-col">
+      <div class="error-banner" id="errorBanner"></div>
+      <div class="notice-banner" id="noticeBanner"></div>
+      <div class="messages" id="messages">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-state-icon">⬡</div>
+          <div class="empty-state-text">No messages yet</div>
+        </div>
+      </div>
+      <div class="typing-indicator" id="typingIndicator">
+        <div class="typing-gutter">assistant</div>
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-name">
+          <input type="text" id="usernameInput" placeholder="your name" maxlength="32"/>
+        </div>
+        <textarea id="msgInput" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <!-- ── Settings panel ── -->
+    <div class="settings-panel" id="settingsPanel">
+
+      <div class="sp-section">
+        <div class="sp-title">API Keys — Google Gemini</div>
+        <div class="key-list" id="keyList">
+          <div class="key-empty">No keys added</div>
+        </div>
+        <div class="add-key-row">
+          <input type="password" id="newKeyInput" placeholder="AIza…" style="font-family:var(--mono);font-size:12px;"/>
+          <button class="btn sm" onclick="addKey()">Add</button>
+        </div>
+        <div style="margin-top:8px; font-family:var(--mono); font-size:9px; color:var(--fg3); line-height:1.6;">
+          Multiple keys rotate automatically. Rate-limited keys are removed.
+        </div>
+      </div>
+
+      <div class="sp-section">
+        <div class="sp-title">Model</div>
+        <select id="modelSelect">
+          <option value="gemini-2.0-flash-thinking-exp">Gemini 2.0 Flash Thinking Preview</option>
+          <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite Preview</option>
+        </select>
+      </div>
+
+      <div class="sp-section">
+        <div class="sp-title">System Prompt</div>
+        <textarea class="sp-textarea" id="systemPrompt" rows="4" placeholder="You are a helpful assistant."></textarea>
+      </div>
+
+      <div class="sp-section">
+        <div class="sp-title">Temperature</div>
+        <div class="range-row">
+          <input type="range" id="tempRange" min="0" max="2" step="0.05"
+            oninput="document.getElementById('tempVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="range-val" id="tempVal">0.70</span>
+        </div>
+      </div>
+
+      <div class="sp-section">
+        <div class="sp-title">Max Output Tokens</div>
+        <div class="range-row">
+          <input type="range" id="tokensRange" min="128" max="8192" step="64"
+            oninput="document.getElementById('tokensVal').textContent=this.value"/>
+          <span class="range-val" id="tokensVal" style="width:44px">1024</span>
+        </div>
+      </div>
+
+      <div class="sp-section">
+        <button class="btn primary sp-save-btn" onclick="saveConfig()">Save Config</button>
+        <div style="margin-top:8px;font-family:var(--mono);font-size:9px;color:var(--fg3);text-align:center;">
+          Config is shared with everyone in the room.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+let ws = null;
+let roomId = null;
+let username = 'Anonymous';
+let settingsOpen = false;
+let messageCount = 0;
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.lobby-tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0) === (tab === 'create'));
+  });
+  document.getElementById('tab-create').classList.toggle('active', tab === 'create');
+  document.getElementById('tab-join').classList.toggle('active', tab === 'join');
+}
+
+// ── Room creation ────────────────────────────────────────────────────────────
+async function createRoom() {
+  const name = document.getElementById('createName').value.trim() || 'Anonymous';
+  try {
+    const res = await fetch('/rooms', { method: 'POST' });
+    const data = await res.json();
+    username = name;
+    enterRoom(data.room_id);
+  } catch(e) {
+    showLobbyError('createError', 'Failed to create room. Is the server running?');
+  }
+}
+
+async function joinRoom() {
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  const name = document.getElementById('joinName').value.trim() || 'Anonymous';
+  if (!code) { showLobbyError('joinError', 'Enter a room code.'); return; }
+
+  try {
+    const res = await fetch(`/rooms/${code}/exists`);
+    const data = await res.json();
+    if (!data.exists) { showLobbyError('joinError', `Room "${code}" not found.`); return; }
+    username = name;
+    enterRoom(code);
+  } catch(e) {
+    showLobbyError('joinError', 'Connection error.');
+  }
+}
+
+function showLobbyError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ── Check URL for room code on load ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('room');
+  if (code) {
+    document.getElementById('joinCode').value = code.toUpperCase();
+    switchTab('join');
+  }
+
+  document.getElementById('msgInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  // Auto-resize textarea
+  document.getElementById('msgInput').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+  });
+});
+
+// ── WebSocket room entry ─────────────────────────────────────────────────────
+function enterRoom(id) {
+  roomId = id;
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('topRoomCode').textContent = id;
+  document.getElementById('usernameInput').value = username;
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${id}`);
+
+  ws.onopen = () => { console.log('WS connected'); };
+  ws.onmessage = e => handleWsMessage(JSON.parse(e.data));
+  ws.onclose = () => {
+    if (roomId) showError('Connection lost. Refresh to reconnect.');
+  };
+  ws.onerror = () => showError('WebSocket error.');
+}
+
+// ── WebSocket message handler ────────────────────────────────────────────────
+function handleWsMessage(msg) {
+  switch (msg.type) {
+    case 'room_state':
+      applyRoomState(msg);
+      break;
+    case 'config_updated':
+      applyConfig(msg.config);
+      break;
+    case 'keys_updated':
+      applyKeys(msg.api_keys, msg.key_count);
+      if (msg.notice) showNotice(msg.notice);
+      break;
+    case 'message':
+      appendMessage(msg.message);
+      break;
+    case 'typing':
+      document.getElementById('typingIndicator').classList.toggle('active', msg.active);
+      if (msg.active) scrollToBottom();
+      break;
+    case 'error':
+      showError(msg.message);
+      break;
+  }
+}
+
+// ── Apply full room state ────────────────────────────────────────────────────
+function applyRoomState(state) {
+  applyConfig(state.config);
+  applyKeys(state.api_keys, state.key_count);
+  // Render history
+  document.getElementById('messages').innerHTML =
+    '<div class="empty-state" id="emptyState"><div class="empty-state-icon">⬡</div><div class="empty-state-text">No messages yet</div></div>';
+  messageCount = 0;
+  for (const m of state.messages) appendMessage(m);
+}
+
+function applyConfig(cfg) {
+  document.getElementById('modelSelect').value = cfg.model;
+  document.getElementById('systemPrompt').value = cfg.system_prompt;
+  document.getElementById('tempRange').value = cfg.temperature;
+  document.getElementById('tempVal').textContent = parseFloat(cfg.temperature).toFixed(2);
+  document.getElementById('tokensRange').value = cfg.max_tokens;
+  document.getElementById('tokensVal').textContent = cfg.max_tokens;
+}
+
+function applyKeys(maskedKeys, count) {
+  const list = document.getElementById('keyList');
+  const dot = document.getElementById('keyDot');
+  const countEl = document.getElementById('keyCount');
+
+  dot.classList.toggle('none', count === 0);
+  countEl.textContent = count === 0 ? '0 keys' : `${count} key${count > 1 ? 's' : ''}`;
+
+  if (!maskedKeys.length) {
+    list.innerHTML = '<div class="key-empty">No keys added</div>';
+    return;
+  }
+  list.innerHTML = maskedKeys.map((k, i) => `
+    <div class="key-item">
+      <span class="key-item-text">${k}</span>
+      <button class="key-remove" onclick="removeKey(${i})" title="Remove key">×</button>
+    </div>
+  `).join('');
+}
+
+// ── Settings helpers ─────────────────────────────────────────────────────────
+function addKey() {
+  const inp = document.getElementById('newKeyInput');
+  const key = inp.value.trim();
+  if (!key) return;
+  ws.send(JSON.stringify({ type: 'add_key', key }));
+  inp.value = '';
+}
+
+function removeKey(idx) {
+  ws.send(JSON.stringify({ type: 'remove_key', index: idx }));
+}
+
+function saveConfig() {
+  const cfg = {
+    model: document.getElementById('modelSelect').value,
+    system_prompt: document.getElementById('systemPrompt').value,
+    temperature: parseFloat(document.getElementById('tempRange').value),
+    max_tokens: parseInt(document.getElementById('tokensRange').value),
+  };
+  ws.send(JSON.stringify({ type: 'update_config', config: cfg }));
+  showNotice('Config saved and synced to room.');
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+function sendMessage() {
+  const inp = document.getElementById('msgInput');
+  const content = inp.value.trim();
+  if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const uname = document.getElementById('usernameInput').value.trim() || 'Anonymous';
+  username = uname;
+  ws.send(JSON.stringify({ type: 'chat', content, username: uname }));
+  inp.value = '';
+  inp.style.height = 'auto';
+}
+
+function appendMessage(msg) {
+  const container = document.getElementById('messages');
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.remove();
+
+  messageCount++;
+  const isAssistant = msg.role === 'assistant';
+  const time = msg.ts ? new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `
+    <div class="msg-gutter">
+      <div class="msg-who ${isAssistant ? 'assistant' : ''}">${escHtml(msg.username || 'user')}</div>
+      <div class="msg-time">${time}</div>
+    </div>
+    <div class="msg-body ${isAssistant ? 'assistant' : ''}">${formatContent(msg.content)}</div>
+  `;
+  container.appendChild(div);
+  scrollToBottom();
+}
+
+function formatContent(text) {
+  // Simple markdown: code blocks and inline code
+  text = escHtml(text);
+  // Code blocks
+  text = text.replace(/```([\s\S]*?)```/g, (_, code) => `<pre>${code.trim()}</pre>`);
+  // Inline code
+  text = text.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
+  // Line breaks
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function scrollToBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+function showError(msg) {
+  const b = document.getElementById('errorBanner');
+  b.textContent = '⚠ ' + msg;
+  b.classList.add('show');
+  setTimeout(() => b.classList.remove('show'), 6000);
+}
+
+function showNotice(msg) {
+  const b = document.getElementById('noticeBanner');
+  b.textContent = msg;
+  b.classList.add('show');
+  setTimeout(() => b.classList.remove('show'), 4000);
+}
+
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById('settingsPanel').classList.toggle('open', settingsOpen);
+  document.getElementById('settingsToggleBtn').classList.toggle('active', settingsOpen);
+}
+
+function copyLink() {
+  const url = `${location.origin}/?room=${roomId}`;
+  navigator.clipboard.writeText(url).then(() => showNotice('Link copied to clipboard.'));
+}
+
+function leaveRoom() {
+  if (ws) { ws.close(); ws = null; }
+  roomId = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+  document.getElementById('messages').innerHTML =
+    '<div class="empty-state" id="emptyState"><div class="empty-state-icon">⬡</div><div class="empty-state-text">No messages yet</div></div>';
+  settingsOpen = false;
+  document.getElementById('settingsPanel').classList.remove('open');
+  history.replaceState({}, '', '/');
+}
+
+// Allow newKeyInput Enter key
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('newKeyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addKey();
+  });
+  document.getElementById('joinCode').addEventListener('keydown', e => {
+    if (e.key === 'Enter') joinRoom();
+  });
+});
+</script>
+</body>
+</html>
