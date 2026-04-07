@@ -23,8 +23,8 @@ INDEX_HTML = BASE_DIR / "index.html"
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = {
-    "gemini-2.0-flash-thinking-exp": "Gemini 2.0 Flash Thinking",
-    "gemini-2.0-flash-lite":         "Gemini 2.0 Flash Lite",
+    "gemini-3-flash-preview": "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview":         "gemini-3.1-flash-lite-preview",
 }
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
