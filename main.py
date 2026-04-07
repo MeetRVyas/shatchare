@@ -4,6 +4,7 @@ import logging
 import random
 import string
 from collections import defaultdict
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -14,6 +15,10 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("llm-rooms")
 
 app = FastAPI(title="LLM Chat Rooms")
+
+# Resolve index.html relative to this file, so it works from any working dir
+BASE_DIR = Path(__file__).parent
+INDEX_HTML = BASE_DIR / "index.html"
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -322,5 +327,4 @@ async def handle_llm(room_id: str, room: dict, history: list[dict]):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    with open("index.html", encoding="utf-8") as f:
-        return f.read()
+    return INDEX_HTML.read_text(encoding="utf-8")
