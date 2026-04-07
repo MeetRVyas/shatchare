@@ -133,7 +133,14 @@ async def call_with_key(
         response = await asyncio.get_event_loop().run_in_executor(
             None, llm.invoke, lc_messages
         )
-        return response.content
+        content = response.content
+        # LangChain may return a list of content blocks instead of a plain string
+        if isinstance(content, list):
+            content = " ".join(
+                block.get("text", "") if isinstance(block, dict) else str(block)
+                for block in content
+            ).strip()
+        return str(content)
 
     except (ResourceExhausted, TooManyRequests) as e:
         raise RateLimitError(f"Rate limit on key ...{api_key[-4:]}") from e
