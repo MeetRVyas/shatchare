@@ -7,7 +7,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-import httpx
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from google.api_core.exceptions import ResourceExhausted, TooManyRequests
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
@@ -23,11 +26,9 @@ INDEX_HTML = BASE_DIR / "index.html"
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = {
-    "gemini-3-flash-preview": "gemini-3-flash-preview",
-    "gemini-3.1-flash-lite-preview":         "gemini-3.1-flash-lite-preview",
+    "gemini-3-flash-preview":        "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview": "gemini-3.1-flash-lite-preview",
 }
-
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 # ─── In-memory state ──────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ def make_code(length: int = 6) -> str:
 def default_room() -> dict:
     return {
         "config": {
-            "model": "gemini-2.0-flash-thinking-exp",
+            "model": "gemini-3-flash-preview",
             "system_prompt": "You are a helpful assistant.",
             "temperature": 0.7,
             "max_tokens": 1024,
@@ -88,17 +89,7 @@ async def broadcast(room_id: str, payload: dict, exclude: Optional[WebSocket] = 
         room_connections[room_id].discard(ws)
 
 
-# ─── Gemini API ───────────────────────────────────────────────────────────────
-
-RATE_LIMIT_PHRASES = ["quota", "rate", "limit", "exhausted", "resource_exhausted"]
-
-
-def is_rate_limit(status: int, body: dict) -> bool:
-    if status == 429:
-        return True
-    txt = json.dumps(body).lower()
-    return any(p in txt for p in RATE_LIMIT_PHRASES)
-
+# ─── LangChain / Gemini ───────────────────────────────────────────────────────
 
 class RateLimitError(Exception):
     pass
@@ -106,6 +97,17 @@ class RateLimitError(Exception):
 
 class GeminiError(Exception):
     pass
+
+
+def build_lc_messages(system_prompt: str, history: list[dict]) -> list:
+    """Convert room message history into LangChain message objects."""
+    messages = [SystemMessage(content=system_prompt)]
+    for msg in history:
+        if msg["role"] == "user":
+            messages.append(HumanMessage(content=msg["content"]))
+        else:
+            messages.append(AIMessage(content=msg["content"]))
+    return messages
 
 
 async def call_with_key(
@@ -116,37 +118,30 @@ async def call_with_key(
     temperature: float,
     max_tokens: int,
 ) -> str:
-    url = f"{GEMINI_BASE}/{model}:generateContent?key={api_key}"
+    """Invoke Gemini via LangChain for a single API key."""
+    llm = ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=api_key,
+        temperature=temperature,
+        max_output_tokens=max_tokens,
+    )
 
-    contents = []
-    for msg in history:
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": contents,
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, json=payload)
-
-    body = resp.json()
-
-    if resp.status_code != 200:
-        if is_rate_limit(resp.status_code, body):
-            raise RateLimitError(f"Rate limit on key ...{api_key[-4:]}")
-        msg = body.get("error", {}).get("message", str(body))
-        raise GeminiError(f"Gemini {resp.status_code}: {msg}")
+    lc_messages = build_lc_messages(system_prompt, history)
 
     try:
-        return body["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as e:
-        raise GeminiError(f"Unexpected response: {body}") from e
+        # Run the synchronous LangChain call in a thread so we don't block the event loop
+        response = await asyncio.get_event_loop().run_in_executor(
+            None, llm.invoke, lc_messages
+        )
+        return response.content
+
+    except (ResourceExhausted, TooManyRequests) as e:
+        raise RateLimitError(f"Rate limit on key ...{api_key[-4:]}") from e
+    except Exception as e:
+        err_str = str(e).lower()
+        if "quota" in err_str or "rate" in err_str or "exhausted" in err_str or "429" in err_str:
+            raise RateLimitError(f"Rate limit on key ...{api_key[-4:]}") from e
+        raise GeminiError(f"Gemini error: {e}") from e
 
 
 async def call_gemini(room: dict, history: list[dict], user_message: str) -> tuple[str, list[str]]:
@@ -170,7 +165,7 @@ async def call_gemini(room: dict, history: list[dict], user_message: str) -> tup
                     api_key=key,
                     model=cfg["model"],
                     system_prompt=cfg["system_prompt"],
-                    history=history,
+                    history=full_history,
                     temperature=float(cfg["temperature"]),
                     max_tokens=int(cfg["max_tokens"]),
                 )
